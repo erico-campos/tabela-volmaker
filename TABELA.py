@@ -1,275 +1,217 @@
 import streamlit as st
-import json
-import os
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 
 # Configuração da página para o celular
-st.set_page_config(page_title="Orçador Comercial V5", page_icon="🏭", layout="centered")
+st.set_page_config(page_title="Volmaker - Configurador de Linhas", page_icon="🏭", layout="centered")
 
-ARQUIVO_BANCO = "banco_precos.json"
+# --- CONEXÃO COM O GOOGLE SHEETS ---
+try:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    # Tentar ler dados da aba Maquinas
+    try:
+        df_maq = conn.read(worksheet="Maquinas", ttl=5)
+        if df_maq.empty or "Categoria" not in df_maq.columns:
+            df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
+    except:
+        df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
+        
+    # Tentar ler dados da aba Kits
+    try:
+        df_kits = conn.read(worksheet="Kits", ttl=5)
+        if df_kits.empty or "Equipamento" not in df_kits.columns:
+            df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
+    except:
+        df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
+except Exception as e:
+    st.error(f"Erro na conexão com o banco de dados. Verifique os Secrets. Erro: {e}")
+    st.stop()
 
-# Dados iniciais padrão de fábrica
-dados_iniciais_categorias = {
-    "Envasadoras": {
-        "ENVASADORA POR CELULA DE CARGA 4 BICOS 5L (PPZ)": 131450.00,
-        "ENVASADORA POR CELULA DE CARGA 4 BICOS 20L (PPZ)": 157635.00,
-        "ENVASADORA POR CELULA DE CARGA 4 BICOS 5L (INOX)": 131450.00,
-        "ENVASADORA POR CELULA DE CARGA 4 BICOS 20L (INOX)": 157635.00,
-        "ENVASADORA LINEAR GRAVIMÉTRICA (PPZ)": 193310.00,
-        "ENVASADORA LINEAR GRAVIMÉTRICA (INOX)": 193310.00,
-        "ENVASADORA LINEAR VOLUMÉTRICA 10 BICOS (INOX)": 317121.00,
-        "ENVASADORA ROTATIVA CÉLULA DE CARGA MONOBLOCO 16/8": 1060250.00,
-    },
-    "Tampadoras": {
-        "TAMPADORA DE BALDES SLIM": 121159.00,
-        "TAMPADORA DE BALDES COM ALIMENTAÇÃO AUTOMÁTICA DE TAMPAS": 213600.00,
-        "TAMPADORA TANGENCIAL": 127422.00,
-        "TAMPADORA PASSO A PASSO SEM ALIMENTADOR DE TAMPAS": 151810.00,
-        "TAMPADORA LINEAR": 77550.00,
-    },
-    "Ensacadeiras": {
-        "ENSACADEIRA AMPLA C/ SOLDA": 172146.00,
-        "ENSACADEIRA AMPLA S/ SOLDA": 137122.00,
-        "ENSACADEIRA SLIM C/SOLDA": 146333.00,
-        "ENSACADEIRA SLIM S/ SOLDA": 119218.00,
-    },
-    "Detector de Furos": {
-        "DETECTOR DE FUROS MODELO GOLD": 71633.00,
-        "DETECTOR DE FUROS MODELO SLIM": 53396.00,
-    },
-    "Posicionadores e Elevadores": {
-        "POSICIONADOR DE FRASCOS PADRÃO": 147239.00,
-        "POSICIONADOR DE FRASCOS COMPACTO": 137111.00,
-        "POSICIONADOR DE FRASCOS MINI": 109213.00,
-        "ELEVADOR DE FRASCOS COM SILO": 73202.00,
-        "CARREGADOR DE PREFORMA MOD. SC-001": 77190.00,
-        "ELEVADOR DE TAMPAS": 37412.00,
-        "ELEVADOR SELECIONADOR DE TAMPAS": 93141.00,
-    },
-    "Administrador de Peso": {
-        "ADMINISTRADOR DE PESO": 189500.00,
-    },
-    "Rotuladoras": {},
-    "Robôs": {}
-}
+# --- DADOS PADRÃO (Caso a planilha esteja zerada no primeiro uso) ---
+if df_maq.empty:
+    dados_padrao_maq = {
+        "Categoria": ["Envasadoras", "Envasadoras", "Envasadoras", "Envasadoras", "Envasadoras", "Envasadoras", "Envasadoras", "Envasadoras", "Tampadoras", "Tampadoras", "Tampadoras", "Tampadoras", "Tampadoras", "Ensacadeiras", "Ensacadeiras", "Ensacadeiras", "Ensacadeiras", "Detector de Furos", "Detector de Furos", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Posicionadores e Elevadores", "Administrador de Peso"],
+        "Equipamento": ["ENVASADORA POR CELULA DE CARGA 4 BICOS 5L (PPZ)", "ENVASADORA POR CELULA DE CARGA 4 BICOS 20L (PPZ)", "ENVASADORA POR CELULA DE CARGA 4 BICOS 5L (INOX)", "ENVASADORA POR CELULA DE CARGA 4 BICOS 20L (INOX)", "ENVASADORA LINEAR GRAVIMÉTRICA (PPZ)", "ENVASADORA LINEAR GRAVIMÉTRICA (INOX)", "ENVASADORA LINEAR VOLUMÉTRICA 10 BICOS (INOX)", "ENVASADORA ROTATIVA CÉLULA DE CARGA MONOBLOCO 16/8", "TAMPADORA DE BALDES SLIM", "TAMPADORA DE BALDES COM ALIMENTAÇÃO AUTOMÁTICA DE TAMPAS", "TAMPADORA TANGENCIAL", "TAMPADORA PASSO A PASSO SEM ALIMENTADOR DE TAMPAS", "TAMPADORA LINEAR", "ENSACADEIRA AMPLA C/ SOLDA", "ENSACADEIRA AMPLA S/ SOLDA", "ENSACADEIRA SLIM C/SOLDA", "ENSACADEIRA SLIM S/ SOLDA", "DETECTOR DE FUROS MODELO GOLD", "DETECTOR DE FUROS MODELO SLIM", "POSICIONADOR DE FRASCOS PADRÃO", "POSICIONADOR DE FRASCOS COMPACTO", "POSICIONADOR DE FRASCOS MINI", "ELEVADOR DE FRASCOS COM SILO", "CARREGADOR DE PREFORMA MOD. SC-001", "ELEVADOR DE TAMPAS", "ELEVADOR SELECIONADOR DE TAMPAS", "ADMINISTRADOR DE PESO"],
+        "Preco": [131450.00, 157635.00, 131450.00, 157635.00, 193310.00, 193310.00, 317121.00, 1060250.00, 121159.00, 213600.00, 127422.00, 151810.00, 77550.00, 172146.00, 137122.00, 146333.00, 119218.00, 71633.00, 53396.00, 147239.00, 137111.00, 109213.00, 73202.00, 77190.00, 37412.00, 93141.00, 189500.00]
+    }
+    df_maq = pd.DataFrame(dados_padrao_maq)
+    conn.update(worksheet="Maquinas", data=df_maq)
 
-dados_iniciais_kits = {
-    "PENTE DA ENVASADORA 12 BICOS": 10320.00,
-    "BICO DE AÇO INOXIDÁVEL ATÉ PCO 28MM": 1452.00,
-    "BICO DE AÇO INOXIDÁVEL ACIMA DE PCO 28MM": 1742.40,
-}
+if df_kits.empty:
+    dados_padrao_kits = {
+        "Equipamento": ["PENTE DA ENVASADORA 12 BICOS", "BICO DE AÇO INOXIDÁVEL ATÉ PCO 28MM", "BICO DE AÇO INOXIDÁVEL ACIMA DE PCO 28MM"],
+        "Preco": [10320.00, 1452.00, 1742.40]
+    }
+    df_kits = pd.DataFrame(dados_padrao_kits)
+    conn.update(worksheet="Kits", data=df_kits)
 
+# Lista fixa de categorias para organização
+categorias_comerciais = ["Envasadoras", "Tampadoras", "Ensacadeiras", "Detector de Furos", "Posicionadores e Elevadores", "Administrador de Peso", "Rotuladoras", "Robôs"]
 
-def carregar_dados():
-    if not os.path.exists(ARQUIVO_BANCO):
-        banco_completo = {"maquinas": dados_iniciais_categorias, "kits": dados_iniciais_kits}
-        with open(ARQUIVO_BANCO, 'w', encoding='utf-8') as f:
-            json.dump(banco_completo, f, ensure_ascii=False, indent=4)
-        return banco_completo
-    else:
-        with open(ARQUIVO_BANCO, 'r', encoding='utf-8') as f:
-            return json.load(f)
+# --- ESTADO DA SESSÃO (CARRINHO DE COMPRAS) ---
+if "carrinho" not in st.session_state:
+    st.session_state.carrinho = []
 
-
-def salvar_dados(dados):
-    with open(ARQUIVO_BANCO, 'w', encoding='utf-8') as f:
-        json.dump(dados, f, ensure_ascii=False, indent=4)
-
-
-banco = carregar_dados()
-dados_categorias = banco["maquinas"]
-dados_kits = banco["kits"]
-
-# --- PAINEL DE CONTROLE LATERAL ---
-st.sidebar.header("⚙️ Configurações Internas")
-modo_apresentacao = st.sidebar.toggle("👁️ Modo Apresentação (Esconder Margens)", value=False)
+# --- PAINEL LATERAL ---
+st.sidebar.header("⚙️ Configurações Técnicas")
+modo_apresentacao = st.sidebar.toggle("👁️ Modo Apresentação (Esconder Interno)", value=False)
 
 if not modo_apresentacao:
-    modo_sistema = st.sidebar.radio("Navegar para:", ["Simulador de Vendas", "Gerenciar Banco de Dados"])
+    modo_sistema = st.sidebar.radio("Ir para:", ["Montar Linha Completa", "Gerenciar Banco de Dados"])
     st.sidebar.markdown("---")
     st.sidebar.subheader("Porcentagens por Segmento")
-    if 'm_pharma' not in st.session_state: st.session_state.m_pharma = 30.0
-    if 'm_cosm' not in st.session_state: st.session_state.m_cosm = 15.0
-    if 'm_alim' not in st.session_state: st.session_state.m_alim = 10.0
-    if 'm_limp' not in st.session_state: st.session_state.m_limp = 0.0
-
-    st.session_state.m_pharma = st.sidebar.number_input("Farmacêutico (%)", value=st.session_state.m_pharma, step=1.0)
-    st.session_state.m_cosm = st.sidebar.number_input("Cosméticos (%)", value=st.session_state.m_cosm, step=1.0)
-    st.session_state.m_alim = st.sidebar.number_input("Alimentício (%)", value=st.session_state.m_alim, step=1.0)
-    st.session_state.m_limp = st.sidebar.number_input("Produtos de Limpeza (%)", value=st.session_state.m_limp,
-                                                      step=1.0)
+    m_limp = st.sidebar.number_input("Produtos de Limpeza (%)", value=0.0, step=1.0)
+    m_alim = st.sidebar.number_input("Alimentício (%)", value=10.0, step=1.0)
+    m_cosm = st.sidebar.number_input("Cosméticos (%)", value=15.0, step=1.0)
+    m_pharma = st.sidebar.number_input("Farmacêutico (%)", value=30.0, step=1.0)
 else:
-    modo_sistema = "Simulador de Vendas"
-    st.sidebar.warning("🔒 Modo Apresentação ativo.")
+    modo_sistema = "Montar Linha Completa"
+    m_limp, m_alim, m_cosm, m_pharma = 0.0, 10.0, 15.0, 30.0
 
 segmentos_opcoes = {
     "Padrão de Fábrica": 0.0,
-    "Produtos de Limpeza": st.session_state.get('m_limp', 0.0) / 100,
-    "Alimentício": st.session_state.get('m_alim', 10.0) / 100,
-    "Cosméticos": st.session_state.get('m_cosm', 15.0) / 100,
-    "Farmacêutico": st.session_state.get('m_pharma', 30.0) / 100
+    "Produtos de Limpeza": m_limp / 100,
+    "Alimentício": m_alim / 100,
+    "Cosméticos": m_cosm / 100,
+    "Farmacêutico": m_pharma / 100
 }
-
 
 def formatar_real(valor):
     return f"R$ {valor:,.2f}".replace(",", "v").replace(".", ",").replace("v", ".")
 
+# --- MÓDULO 1: SIMULADOR DE LINHA COMPLETA ---
+if modo_sistema == "Montar Linha Completa":
+    st.title("🏭 Configurador de Linha de Produção")
+    
+    with st.expander("➕ Adicionar Equipamento à Linha", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            cat_sel = st.selectbox("Categoria:", categorias_comerciais)
+        with col2:
+            modelos_filtrados = df_maq[df_maq["Categoria"] == cat_sel]["Equipamento"].tolist()
+            mod_sel = st.selectbox("Modelo:", modelos_filtrados if modelos_filtrados else ["Nenhum cadastrado"])
+        
+        if st.button("Adicionar este Item à Linha"):
+            if modelos_filtrados:
+                preco_item = df_maq[df_maq["Equipamento"] == mod_sel]["Preco"].values[0]
+                st.session_state.carrinho.append({"Item": mod_sel, "Preco": float(preco_item), "Tipo": "Máquina"})
+                st.toast(f"{mod_sel} adicionado!")
+                st.rerun()
 
-# --- MÓDULO 1: SIMULADOR DE VENDAS ---
-if modo_sistema == "Simulador de Vendas":
-    st.title("🏭 Proposta Técnica de Equipamentos")
-    categorias_validas = [cat for cat, itens in dados_categorias.items() if itens]
+    with st.expander("➕ Adicionar Periférico / Kit Opcional"):
+        kit_sel = st.selectbox("Selecione o Opcional:", df_kits["Equipamento"].tolist())
+        if st.button("Adicionar Opcional à Linha"):
+            preco_kit = df_kits[df_kits["Equipamento"] == kit_sel]["Preco"].values[0]
+            st.session_state.carrinho.append({"Item": kit_sel, "Preco": float(preco_kit), "Tipo": "Kit"})
+            st.toast(f"{kit_sel} adicionado!")
+            st.rerun()
 
-    if not categorias_validas:
-        st.warning("⚠️ Banco de dados sem itens cadastrados.")
+    # --- EXIBIÇÃO DA LINHA MONTADA ---
+    st.markdown("### 📋 Itens da Proposta")
+    if not st.session_state.carrinho:
+        st.info("Sua linha está vazia. Adicione equipamentos acima.")
     else:
-        categoria_selecionada = st.selectbox("Selecione a Categoria do Equipamento:", categorias_validas)
-        modelo_selecionado = st.selectbox("Selecione o Modelo da Máquina:",
-                                          list(dados_categorias[categoria_selecionada].keys()))
-        preco_maquina = dados_categorias[categoria_selecionada][modelo_selecionado]
-
-        kits_selecionados = st.multiselect("Deseja incluir Periféricos / Acessórios Opcionais?",
-                                           list(dados_kits.keys()))
-        preco_kits = sum([dados_kits[kit] for kit in kits_selecionados])
-
-        segmento_selecionado = st.selectbox("Configuração Técnica da Linha:", list(segmentos_opcoes.keys()))
-
-        preco_base_total = preco_maquina + preco_kits
-        porcentagem_segmento = segmentos_opcoes[segmento_selecionado]
-        valor_acrescimo_segmento = preco_base_total * porcentagem_segmento
-        preco_final_proposta = preco_base_total + valor_acrescimo_segmento
-
+        # Tabela de itens no carrinho
+        itens_display = pd.DataFrame(st.session_state.carrinho)
+        st.table(itens_display.assign(Preco=itens_display["Preco"].apply(formatar_real)))
+        
+        if st.button("🗑️ Limpar Orçamento"):
+            st.session_state.carrinho = []
+            st.rerun()
+            
         st.markdown("---")
+        segmento_sel = st.selectbox("Configuração Técnica de Segmento:", list(segmentos_opcoes.keys()))
+        
+        # Cálculos Finais
+        subtotal_puro = sum(item["Preco"] for item in st.session_state.carrinho)
+        porcentagem = segmentos_opcoes[segmento_sel]
+        valor_segmento = subtotal_puro * porcentagem
+        total_final = subtotal_puro + valor_segmento
+
         if modo_apresentacao:
-            st.subheader("📋 Resumo da Configuração Solicitada")
-            st.markdown(f"**Equipamento Principal:** {modelo_selecionado}")
-            if kits_selecionados:
-                st.markdown("**Acessórios Incluídos:**")
-                for kit in kits_selecionados:
-                    st.markdown(f"- *{kit}*")
-            st.markdown(" ")
-            st.success(f"### **Preço Final de Fornecimento: {formatar_real(preco_final_proposta)}**")
-            st.caption("Preço sob condições padrão de tabela. Válido para a configuração técnica selecionada acima.")
+            st.success(f"## **Valor Total da Linha: {formatar_real(total_final)}**")
+            st.caption(f"Configuração para o segmento {segmento_sel}.")
         else:
-            st.subheader("🕵️ Visão Interna do Consultor (SÓ VOCÊ VÊ)")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(label="Preço Base Máquina", value=formatar_real(preco_maquina))
-                st.metric(label="Total em Periféricos", value=formatar_real(preco_kits))
-            with col2:
-                st.metric(label="Subtotal Puro", value=formatar_real(preco_base_total))
-                st.metric(label=f"Acréscimo Comercial ({int(porcentagem_segmento * 100)}%)",
-                          value=formatar_real(valor_acrescimo_segmento))
-            st.success(f"## **Preço Final: {formatar_real(preco_final_proposta)}**")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Subtotal Itens", formatar_real(subtotal_puro))
+            c2.metric(f"Ajuste Segmento ({int(porcentagem*100)}%)", formatar_real(valor_segmento))
+            c3.metric("Total Final", formatar_real(total_final))
+            st.success(f"### Preço Sugerido: {formatar_real(total_final)}")
 
-# --- MÓDULO 2: GERENCIADOR DO BANCO DE DADOS (COM EDIÇÃO INTEGRADA) ---
+# --- MÓDULO 2: GERENCIADOR DE BANCO DE DADOS ---
 else:
-    st.markdown("### 🛠️ Gerenciador de Itens e Catálogo")
-    st.write("Crie novos itens ou selecione um existente para alterar o valor.")
-
-    aba_maquina, aba_kits = st.tabs(["Maquinas e Modelos", "Periféricos e Opcionais"])
-
-    with aba_maquina:
-        st.write("#### 📝 Adicionar ou Editar Equipamento")
-        cat_edit = st.selectbox("Escolha a Categoria Comercial:", list(dados_categorias.keys()))
-
-        # Sistema Inteligente de Seleção para Edição
-        acao_maq = st.radio("O que deseja fazer?", ["Adicionar Novo Modelo", "Editar Preço de Modelo Existente"],
-                            horizontal=True)
-
-        if acao_maq == "Editar Preço de Modelo Existente":
-            if dados_categorias[cat_edit]:
-                modelo_para_editar = st.selectbox("Selecione a máquina que deseja alterar:",
-                                                  list(dados_categorias[cat_edit].keys()))
-                preco_atual = dados_categorias[cat_edit][modelo_para_editar]
-                st.info(f"Preço atual registrado: {formatar_real(preco_atual)}")
-
-                # O input já vem preenchido com o valor antigo para você só ajustar
-                novo_preco = st.number_input("Digite o Novo Preço (R$):", value=float(preco_atual), min_value=0.0,
-                                             step=100.0, key="edit_maq_val")
-
-                if st.button("💾 Atualizar Preço da Máquina"):
-                    dados_categorias[cat_edit][modelo_para_editar] = novo_preco
-                    banco["maquinas"] = dados_categorias
-                    salvar_dados(banco)
-                    st.success(f"Preço de {modelo_para_editar} atualizado com sucesso!")
+    st.title("🛠️ Gerenciador de Preços (Google Sheets)")
+    st.write("Edite aqui para salvar permanentemente na sua Planilha Google.")
+    
+    aba1, aba2 = st.tabs(["Máquinas", "Periféricos/Kits"])
+    
+    with aba1:
+        cat_m = st.selectbox("Selecione Categoria para Editar/Adicionar:", categorias_comerciais)
+        acao = st.radio("Ação:", ["Adicionar Novo", "Editar Preço", "Excluir"], horizontal=True)
+        
+        if acao == "Adicionar Novo":
+            n_nome = st.text_input("Nome da Máquina:").strip().upper()
+            n_preco = st.number_input("Preço Fábrica:", min_value=0.0, step=100.0)
+            if st.button("Salvar Nova Máquina"):
+                nova_linha = pd.DataFrame([{"Categoria": cat_m, "Equipamento": n_nome, "Preco": n_preco}])
+                df_maq = pd.concat([df_maq, nova_linha], ignore_index=True)
+                conn.update(worksheet="Maquinas", data=df_maq)
+                st.success("Salvo com sucesso!")
+                st.rerun()
+        
+        elif acao == "Editar Preço":
+            maquinas_cat = df_maq[df_maq["Categoria"] == cat_m]["Equipamento"].tolist()
+            if maquinas_cat:
+                m_sel = st.selectbox("Equipamento:", maquinas_cat)
+                p_atual = df_maq[df_maq["Equipamento"] == m_sel]["Preco"].values[0]
+                n_p = st.number_input("Novo Preço:", value=float(p_atual), step=100.0)
+                if st.button("Atualizar Preço"):
+                    df_maq.loc[df_maq["Equipamento"] == m_sel, "Preco"] = n_p
+                    conn.update(worksheet="Maquinas", data=df_maq)
+                    st.success("Preço atualizado!")
                     st.rerun()
-            else:
-                st.warning("Não há máquinas cadastradas nesta categoria para editar.")
 
-        else:  # Adicionar Novo
-            nome_modelo = st.text_input("Nome da Nova Máquina/Modelo:").strip().upper()
-            preco_modelo = st.number_input("Preço de Tabela Base (R$):", min_value=0.0, step=100.0, key="new_maq_val")
-
-            if st.button("➕ Cadastrar Nova Máquina"):
-                if nome_modelo:
-                    dados_categorias[cat_edit][nome_modelo] = preco_modelo
-                    banco["maquinas"] = dados_categorias
-                    salvar_dados(banco)
-                    st.success(f"{nome_modelo} adicionada ao catálogo!")
+        elif acao == "Excluir":
+            maquinas_cat = df_maq[df_maq["Categoria"] == cat_m]["Equipamento"].tolist()
+            if maquinas_cat:
+                m_del = st.selectbox("Equipamento para excluir:", maquinas_cat)
+                if st.button("Confirmar Exclusão"):
+                    df_maq = df_maq[df_maq["Equipamento"] != m_del]
+                    conn.update(worksheet="Maquinas", data=df_maq)
+                    st.warning("Excluído!")
                     st.rerun()
-                else:
-                    st.error("Insira o nome do modelo.")
 
-        st.markdown("---")
-        st.write("#### 🗑️ Excluir Equipamento do Sistema")
-        cat_del = st.selectbox("Categoria para exclusão:", list(dados_categorias.keys()), key="cat_del_maq")
-        if dados_categorias[cat_del]:
-            modelo_del = st.selectbox("Escolha o modelo para deletar definitivamente:",
-                                      list(dados_categorias[cat_del].keys()))
-            if st.button("❌ Deletar Modelo", type="primary", key="btn_del_maq"):
-                del dados_categorias[cat_del][modelo_del]
-                banco["maquinas"] = dados_categorias
-                salvar_dados(banco)
-                st.warning(f"O modelo {modelo_del} foi removido.")
+    with aba2:
+        st.write("#### Gerenciar Periféricos")
+        acao_k = st.radio("Ação Kit:", ["Adicionar Kit", "Editar Kit", "Excluir Kit"], horizontal=True)
+        
+        if acao_k == "Adicionar Kit":
+            nk_nome = st.text_input("Nome do Periférico:").strip().upper()
+            nk_preco = st.number_input("Preço Kit:", min_value=0.0, step=50.0)
+            if st.button("Salvar Novo Kit"):
+                nk_lin = pd.DataFrame([{"Equipamento": nk_nome, "Preco": nk_preco}])
+                df_kits = pd.concat([df_kits, nk_lin], ignore_index=True)
+                conn.update(worksheet="Kits", data=df_kits)
+                st.success("Kit salvo!")
+                st.rerun()
+        
+        elif acao_k == "Editar Kit":
+            k_sel = st.selectbox("Selecionar Kit:", df_kits["Equipamento"].tolist())
+            pk_at = df_kits[df_kits["Equipamento"] == k_sel]["Preco"].values[0]
+            nk_p = st.number_input("Novo Preço Kit:", value=float(pk_at), step=50.0)
+            if st.button("Atualizar Kit"):
+                df_kits.loc[df_kits["Equipamento"] == k_sel, "Preco"] = nk_p
+                conn.update(worksheet="Kits", data=df_kits)
+                st.success("Kit atualizado!")
                 st.rerun()
 
-    with aba_kits:
-        st.write("#### 📝 Adicionar ou Editar Periférico / Opcional")
-
-        acao_kit = st.radio("O que deseja fazer?",
-                            ["Adicionar Novo Periférico", "Editar Preço de Periférico Existente"], horizontal=True)
-
-        if acao_kit == "Editar Preço de Periférico Existente":
-            if dados_kits:
-                kit_para_editar = st.selectbox("Selecione o periférico que deseja alterar:", list(dados_kits.keys()))
-                preco_kit_atual = dados_kits[kit_para_editar]
-                st.info(f"Preço atual registrado: {formatar_real(preco_kit_atual)}")
-
-                novo_preco_kit = st.number_input("Digite o Novo Preço do Periférico (R$):",
-                                                 value=float(preco_kit_atual), min_value=0.0, step=50.0,
-                                                 key="edit_kit_val")
-
-                if st.button("💾 Atualizar Preço do Periférico"):
-                    dados_kits[kit_para_editar] = novo_preco_kit
-                    banco["kits"] = dados_kits
-                    salvar_dados(banco)
-                    st.success(f"Preço de {kit_para_editar} atualizado com sucesso!")
-                    st.rerun()
-            else:
-                st.warning("Não há periféricos cadastrados para editar.")
-
-        else:  # Adicionar Novo Periférico
-            nome_kit = st.text_input("Nome do Novo Periférico / Acessório:").strip().upper()
-            preco_kit = st.number_input("Preço de Tabela do Periférico (R$):", min_value=0.0, step=50.0,
-                                        key="new_kit_val")
-
-            if st.button("➕ Cadastrar Novo Periférico"):
-                if nome_kit:
-                    dados_kits[nome_kit] = preco_kit
-                    banco["kits"] = dados_kits
-                    salvar_dados(banco)
-                    st.success(f"Periférico '{nome_kit}' adicionado ao catálogo!")
-                    st.rerun()
-                else:
-                    st.error("Insira o nome do periférico.")
-
-        st.markdown("---")
-        st.write("#### 🗑️ Excluir Periférico do Sistema")
-        if dados_kits:
-            kit_del = st.selectbox("Escolha o periférico para deletar definitivamente:", list(dados_kits.keys()))
-            if st.button("❌ Deletar Periférico", type="primary", key="btn_del_kit"):
-                del dados_kits[kit_del]
-                banco["kits"] = dados_kits
-                salvar_dados(banco)
-                st.warning(f"O periférico {kit_del} foi removido.")
+        elif acao_k == "Excluir Kit":
+            k_del = st.selectbox("Kit para deletar:", df_kits["Equipamento"].tolist())
+            if st.button("Confirmar Exclusão Kit"):
+                df_kits = df_kits[df_kits["Equipamento"] != k_del]
+                conn.update(worksheet="Kits", data=df_kits)
+                st.warning("Kit removido!")
                 st.rerun()
+
+
