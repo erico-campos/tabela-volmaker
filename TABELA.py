@@ -1,65 +1,61 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # Configuração da página para o celular
 st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", layout="centered")
 
-# --- INSTANCIANDO DATA_FRAMES VAZIOS DE SEGURANÇA ---
-df_padrao_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
-df_padrao_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
+# LINK DA SUA PLANILHA GOOGLE (Extraído do seu print de tela)
+LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o/edit"
 
-# Configuração padrão caso a nova aba da planilha ainda não esteja criada
-df_padrao_margens = pd.DataFrame({
-    "Porte": ["Pequena Empresa", "Media Empresa", "Grande Empresa", "Multinacional"],
-    "Porcentagem": [10.0, 40.0, 80.0, 150.0]
-})
-
-# --- TENTATIVA DE CONEXÃO COM O GOOGLE SHEETS ---
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # Lendo aba Maquinas
+# Função otimizada para carregar os dados via CSV direto do Google Drive
+@st.cache_data(ttl=5)  # Atualiza os dados a cada 5 segundos se houver mudanças
+def carregar_aba(nome_aba):
     try:
-        df_maq = conn.read(worksheet="Maquinas", ttl=2)
-        if df_maq.empty or "Equipamento" not in df_maq.columns:
-            df_maq = df_padrao_maq
-    except:
-        df_maq = df_padrao_maq
-        
-    # Lendo aba Kits
-    try:
-        df_kits = conn.read(worksheet="Kits", ttl=2)
-        if df_kits.empty or "Equipamento" not in df_kits.columns:
-            df_kits = df_padrao_kits
-    except:
-        df_kits = df_padrao_kits
+        # Transforma o link normal em link de exportação de dados
+        url_csv = LINK_PLANILHA.replace("/edit", f"/gviz/tq?tqx=out:csv&sheet={nome_aba}")
+        df = pd.read_csv(url_csv)
+        return df
+        # Limpa colunas sem nome criadas pelo Excel/Sheets
+        if not df.empty:
+            df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        return df
+    except Exception as e:
+        return pd.DataFrame()
 
-    # Lendo a NOVA aba Margens permanente
-    try:
-        df_margens = conn.read(worksheet="Margens", ttl=2)
-        if df_margens.empty or "Porcentagem" not in df_margens.columns:
-            df_margens = df_padrao_margens
-    except:
-        df_margens = df_padrao_margens
-except Exception as e:
-    df_maq = df_padrao_maq
-    df_kits = df_padrao_kits
-    df_margens = df_padrao_margens
+# --- CARREGAMENTO EM TEMPO REAL DAS ABAS ---
+df_maq = carregar_aba("Maquinas")
+df_kits = carregar_aba("Kits")
+df_margens = carregar_aba("Margens")
 
-# Tratamento numérico dos preços e margens
+# --- TRATAMENTO E VALIDAÇÃO DOS DADOS ---
 if not df_maq.empty and "Preco" in df_maq.columns:
     df_maq["Preco"] = pd.to_numeric(df_maq["Preco"], errors='coerce').fillna(0.0)
+else:
+    # Fallback caso a planilha demore a responder na primeira execução
+    df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
+
 if not df_kits.empty and "Preco" in df_kits.columns:
     df_kits["Preco"] = pd.to_numeric(df_kits["Preco"], errors='coerce').fillna(0.0)
-df_margens["Porcentagem"] = pd.to_numeric(df_margens["Porcentagem"], errors='coerce').fillna(0.0)
+else:
+    df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
 
-# Criando o dicionário de opções baseado no que está salvo na Planilha
-segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
-for _, linha in df_margens.iterrows():
-    segmentos_opcoes[linha["Porte"]] = float(linha["Porcentagem"]) / 100
+# Tratamento da aba de margens permanente criada por você
+if not df_margens.empty and "Porcentagem" in df_margens.columns and "Porte" in df_margens.columns:
+    df_margens["Porcentagem"] = pd.to_numeric(df_margens["Porcentagem"], errors='coerce').fillna(0.0)
+    segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
+    for _, linha in df_margens.iterrows():
+        segmentos_opcoes[str(linha["Porte"])] = float(linha["Porcentagem"]) / 100
+else:
+    # Valores de segurança caso a aba Margens não seja lida corretamente
+    segmentos_opcoes = {
+        "Padrão de Fábrica (sem acrescentar porcentagem)": 0.0,
+        "Pequena Empresa": 0.0,
+        "Media Empresa": 0.10,
+        "Grande Empresa": 0.30,
+        "Multinacional": 1.50
+    }
 
-# Categorias comerciais
+# Categorias comerciais idênticas à planilha
 categorias_comerciais = ["Envasadoras", "Tampadoras", "Ensacadeiras", "Detector de Furos", "Posicionadores e Elevadores", "Administrador de Peso", "Rotuladoras", "Robôs"]
 
 # --- ESTADO DO CARRINHO DE COMPRAS ---
@@ -71,9 +67,9 @@ st.sidebar.header("⚙️ Configurações Comerciais")
 modo_apresentacao = st.sidebar.toggle("👁️ Modo Apresentação (Esconder Interno)", value=False)
 
 if not modo_apresentacao:
-    st.sidebar.info("💡 Suas margens agora estão salvas na planilha Google! Para alterá-las permanentemente, edite a aba 'Margens' lá no seu Drive.")
+    st.sidebar.info("💡 Suas margens estão integradas à planilha! Edite a aba 'Margens' no Drive para mudar os valores fixos.")
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Margens Atuais da Planilha")
+    st.sidebar.subheader("📊 Margens Carregadas")
     for porte, valor in segmentos_opcoes.items():
         if "Padrão" not in porte:
             st.sidebar.text(f"{porte}: {int(valor * 100)}%")
@@ -90,13 +86,13 @@ aba_tabela, aba_linha = st.tabs(["🔍 Ver Tabela de Preços", "🛒 Montar Linh
 with aba_tabela:
     st.markdown("### Lista Geral de Equipamentos Cadastrados")
     if df_maq.empty:
-        st.warning("Nenhum equipamento encontrado na aba 'Maquinas' da sua planilha.")
+        st.warning("Aguardando conexão com a planilha 'Maquinas' ou colunas incorretas.")
     else:
         cat_filtro = st.selectbox("Filtrar por Categoria Comercial:", ["Todas"] + categorias_comerciais)
         df_mostrar = df_maq.copy() if cat_filtro == "Todas" else df_maq[df_maq["Categoria"] == cat_filtro].copy()
         
         if df_mostrar.empty:
-            st.info(f"Nenhum equipamento cadastrado na categoria '{cat_filtro}'.")
+            st.info(f"Nenhum equipamento localizado na categoria '{cat_filtro}'.")
         else:
             df_mostrar_formatado = df_mostrar.copy()
             df_mostrar_formatado["Preco"] = df_mostrar_formatado["Preco"].apply(formatar_real)
@@ -105,7 +101,7 @@ with aba_tabela:
 # --- ABA 2: CONFIGURADOR DE LINHA ---
 with aba_linha:
     if df_maq.empty:
-        st.warning("Preencha sua Planilha Google primeiro para habilitar o montador de linhas.")
+        st.warning("Conecte os dados do seu Google Sheets para liberar o configurador.")
     else:
         with st.expander("➕ Selecionar Máquina para a Linha", expanded=True):
             col1, col2 = st.columns(2)
@@ -132,7 +128,7 @@ with aba_linha:
                     st.toast(f"{kit_sel} adicionado à linha!")
                     st.rerun()
             else:
-                st.write("Nenhum periférico cadastrado na aba 'Kits'.")
+                st.write("Nenhum periférico localizado na aba 'Kits'.")
 
         # --- LISTA DO ORÇAMENTO ATUAL ---
         st.markdown("### 📋 Composição da Linha Orçada")
@@ -148,10 +144,8 @@ with aba_linha:
                 
             st.markdown("---")
             
-            # Caixa de seleção com os novos nomes de porte de empresa!
             segmento_sel = st.selectbox("Definir Porte da Empresa Cliente:", list(segmentos_opcoes.keys()))
             
-            # Cálculos finais utilizando a porcentagem vinda da planilha
             subtotal_puro = sum(item["Preco"] for item in st.session_state.carrinho)
             porcentagem = segmentos_opcoes[segmento_sel]
             valor_segmento = subtotal_puro * porcentagem
@@ -159,9 +153,10 @@ with aba_linha:
 
             if modo_apresentacao:
                 st.success(f"## **Valor Total da Linha: {formatar_real(total_final)}**")
-                st.caption(f"Proposta comercial gerada para: {segmento_sel}.")
+                st.caption(f"Proposta comercial gerada para o segmento: {segmento_sel}.")
             else:
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Subtotal Puro", formatar_real(subtotal_puro))
                 c2.metric(f"Adicional Porte ({int(porcentagem*100)}%)", formatar_real(valor_segmento))
                 c3.metric("Valor Sugerido Final", formatar_real(total_final))
+                
