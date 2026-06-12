@@ -12,7 +12,7 @@ df_padrao_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
 # Configuração padrão caso a nova aba da planilha ainda não esteja criada
 df_padrao_margens = pd.DataFrame({
     "Porte": ["Pequena Empresa", "Media Empresa", "Grande Empresa", "Multinacional"],
-    "Porcentagem": [0.0, 10.0, 30.0, 150.0]
+    "Porcentagem": [10.0, 40.0, 80.0, 150.0]
 })
 
 # --- TENTATIVA DE CONEXÃO COM O GOOGLE SHEETS ---
