@@ -4,49 +4,46 @@ import pandas as pd
 # Configuração da página para o celular
 st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", layout="centered")
 
-# LINK DA SUA PLANILHA GOOGLE (Extraído do seu print de tela)
+# LINK DA SUA PLANILHA GOOGLE
 LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o/edit"
 
 # Função otimizada para carregar os dados via CSV direto do Google Drive
-@st.cache_data(ttl=5)  # Atualiza os dados a cada 5 segundos se houver mudanças
+@st.cache_data(ttl=2)  # Atualiza rápido caso você mude valores na planilha
 def carregar_aba(nome_aba):
     try:
         # Transforma o link normal em link de exportação de dados
-        url_csv = LINK_PLANILHA.replace("/edit", f"/gviz/tq?tqx=out:csv&sheet={nome_aba}")
+        url_csv = LINK_PLANILHA.split("/edit")[0] + f"/gviz/tq?tqx=out:csv&sheet={nome_aba}"
         df = pd.read_csv(url_csv)
-        return df
-        # Limpa colunas sem nome criadas pelo Excel/Sheets
         if not df.empty:
+            # Limpa colunas em branco criadas acidentalmente
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         return df
     except Exception as e:
         return pd.DataFrame()
 
-# --- CARREGAMENTO EM TEMPO REAL DAS ABAS ---
+# --- CARREGAMENTO DOS DADOS ---
 df_maq = carregar_aba("Maquinas")
 df_kits = carregar_aba("Kits")
 df_margens = carregar_aba("Margens")
 
-# --- TRATAMENTO E VALIDAÇÃO DOS DADOS ---
+# --- TRATAMENTO E VALIDAÇÃO ---
 if not df_maq.empty and "Preco" in df_maq.columns:
-    df_maq["Preco"] = pd.to_numeric(df_maq["Preco"], errors='coerce').fillna(0.0)
+    df_maq["Preco"] = pd.to_numeric(df_maq["Preco"].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
 else:
-    # Fallback caso a planilha demore a responder na primeira execução
     df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
 
 if not df_kits.empty and "Preco" in df_kits.columns:
-    df_kits["Preco"] = pd.to_numeric(df_kits["Preco"], errors='coerce').fillna(0.0)
+    df_kits["Preco"] = pd.to_numeric(df_kits["Preco"].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
 else:
     df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
 
-# Tratamento da aba de margens permanente criada por você
+# Tratamento da aba de margens
 if not df_margens.empty and "Porcentagem" in df_margens.columns and "Porte" in df_margens.columns:
     df_margens["Porcentagem"] = pd.to_numeric(df_margens["Porcentagem"], errors='coerce').fillna(0.0)
     segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
     for _, linha in df_margens.iterrows():
         segmentos_opcoes[str(linha["Porte"])] = float(linha["Porcentagem"]) / 100
 else:
-    # Valores de segurança caso a aba Margens não seja lida corretamente
     segmentos_opcoes = {
         "Padrão de Fábrica (sem acrescentar porcentagem)": 0.0,
         "Pequena Empresa": 0.0,
@@ -55,7 +52,6 @@ else:
         "Multinacional": 1.50
     }
 
-# Categorias comerciais idênticas à planilha
 categorias_comerciais = ["Envasadoras", "Tampadoras", "Ensacadeiras", "Detector de Furos", "Posicionadores e Elevadores", "Administrador de Peso", "Rotuladoras", "Robôs"]
 
 # --- ESTADO DO CARRINHO DE COMPRAS ---
@@ -67,7 +63,7 @@ st.sidebar.header("⚙️ Configurações Comerciais")
 modo_apresentacao = st.sidebar.toggle("👁️ Modo Apresentação (Esconder Interno)", value=False)
 
 if not modo_apresentacao:
-    st.sidebar.info("💡 Suas margens estão integradas à planilha! Edite a aba 'Margens' no Drive para mudar os valores fixos.")
+    st.sidebar.info("💡 Suas margens estão integradas à planilha!")
     st.sidebar.markdown("---")
     st.sidebar.subheader("📊 Margens Carregadas")
     for porte, valor in segmentos_opcoes.items():
@@ -86,7 +82,7 @@ aba_tabela, aba_linha = st.tabs(["🔍 Ver Tabela de Preços", "🛒 Montar Linh
 with aba_tabela:
     st.markdown("### Lista Geral de Equipamentos Cadastrados")
     if df_maq.empty:
-        st.warning("Aguardando conexão com a planilha 'Maquinas' ou colunas incorretas.")
+        st.warning("Aguardando liberação do link da planilha no Google Drive...")
     else:
         cat_filtro = st.selectbox("Filtrar por Categoria Comercial:", ["Todas"] + categorias_comerciais)
         df_mostrar = df_maq.copy() if cat_filtro == "Todas" else df_maq[df_maq["Categoria"] == cat_filtro].copy()
@@ -101,7 +97,7 @@ with aba_tabela:
 # --- ABA 2: CONFIGURADOR DE LINHA ---
 with aba_linha:
     if df_maq.empty:
-        st.warning("Conecte os dados do seu Google Sheets para liberar o configurador.")
+        st.warning("Aguardando liberação do link da planilha no Google Drive...")
     else:
         with st.expander("➕ Selecionar Máquina para a Linha", expanded=True):
             col1, col2 = st.columns(2)
@@ -159,4 +155,3 @@ with aba_linha:
                 c1.metric("Subtotal Puro", formatar_real(subtotal_puro))
                 c2.metric(f"Adicional Porte ({int(porcentagem*100)}%)", formatar_real(valor_segmento))
                 c3.metric("Valor Sugerido Final", formatar_real(total_final))
-                
