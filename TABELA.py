@@ -7,19 +7,19 @@ st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", 
 # LINK DA SUA PLANILHA GOOGLE
 LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o/edit"
 
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1) # Atualização praticamente instantânea
 def carregar_aba(nome_aba):
     try:
         url_csv = LINK_PLANILHA.split("/edit")[0] + f"/gviz/tq?tqx=out:csv&sheet={nome_aba}"
-        # Força o pandas a ler tudo inicialmente como texto para evitar quebras por símbolos
-        df = pd.read_csv(url_csv, dtype=str)
+        # Lê todas as linhas como texto puro e ignora nomes de colunas automáticos do pandas
+        df = pd.read_csv(url_csv, header=None, dtype=str)
         if not df.empty:
-            # Remove colunas vazias geradas por linhas fantasmas na planilha
-            df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
-            # Limpa espaços em branco no início/fim dos textos e nomes de colunas
-            df.columns = df.columns.str.strip()
-            for col in df.columns:
-                df[col] = df[col].astype(str).str.strip()
+            # Remove linhas completamente vazias
+            df = df.dropna(how='all')
+            # Descarta colunas vazias extras do Sheets
+            df = df.dropna(axis=1, how='all')
+            # Garante que os textos não tenham espaços invisíveis nas pontas
+            df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -31,40 +31,43 @@ df_margens_raw = carregar_aba("Margens")
 
 # --- FUNÇÃO AUXILIAR PARA LIMPAR PREÇOS ---
 def limpar_preco_vader(valor_str):
-    if pd.isna(valor_str) or valor_str == 'nan' or valor_str == '':
+    if pd.isna(valor_str) or str(valor_str).lower() == 'nan' or str(valor_str).strip() == '':
         return 0.0
-    # Remove símbolos de moeda, pontos de milhar e substitui a vírgula decimal por ponto
-    limpo = valor_str.replace("R$", "").replace("r$", "").replace(" ", "")
-    # Se o número estiver no formato brasileiro (ex: 131.450,00 ou 131450,00)
+    limpo = str(valor_str).replace("R$", "").replace("r$", "").replace(" ", "")
     if "," in limpo:
         limpo = limpo.replace(".", "").replace(",", ".")
-    return pd.to_numeric(limpo, errors='coerce') or 0.0
+    try:
+        return float(pd.to_numeric(limpo, errors='coerce'))
+    except:
+        return 0.0
 
-# --- TRATAMENTO E ESTRUTURAÇÃO DOS DATAFRAMES ---
-if not df_maq_raw.empty and "Equipamento" in df_maq_raw.columns and "Preco" in df_maq_raw.columns:
+# --- PROCESSAMENTO DA ABA MAQUINAS ---
+# Ignora a primeira linha (cabeçalho) e força a leitura por posição de coluna
+if not df_maq_raw.empty and len(df_maq_raw) > 1:
     df_maq = pd.DataFrame({
-        "Categoria": df_maq_raw["Categoria"] if "Categoria" in df_maq_raw.columns else "Geral",
-        "Equipamento": df_maq_raw["Equipamento"],
-        "Preco": df_maq_raw["Preco"].apply(limpar_preco_vader)
-    })
+        "Categoria": df_maq_raw.iloc[1:, 0],   # Coluna A
+        "Equipamento": df_maq_raw.iloc[1:, 1], # Coluna B
+        "Preco": df_maq_raw.iloc[1:, 2].apply(limpar_preco_vader) # Coluna C
+    }).dropna(subset=["Equipamento"])
 else:
     df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
 
-if not df_kits_raw.empty and "Equipamento" in df_kits_raw.columns and "Preco" in df_kits_raw.columns:
+# --- PROCESSAMENTO DA ABA KITS ---
+if not df_kits_raw.empty and len(df_kits_raw) > 1:
     df_kits = pd.DataFrame({
-        "Equipamento": df_kits_raw["Equipamento"],
-        "Preco": df_kits_raw["Preco"].apply(limpar_preco_vader)
-    })
+        "Equipamento": df_kits_raw.iloc[1:, 0], # Coluna A
+        "Preco": df_kits_raw.iloc[1:, 1].apply(limpar_preco_vader) # Coluna B
+    }).dropna(subset=["Equipamento"])
 else:
     df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
 
-# Configuração das margens baseado na planilha
+# --- PROCESSAMENTO DA ABA MARGENS ---
 segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
-if not df_margens_raw.empty and "Porte" in df_margens_raw.columns and "Porcentagem" in df_margens_raw.columns:
-    for _, linha in df_margens_raw.iterrows():
-        porte_nome = str(linha["Porte"])
-        if porte_nome and porte_nome != 'nan':
-            pct_str = str(linha["Porcentagem"]).replace("%", "").replace(",", ".")
+if not df_margens_raw.empty and len(df_margens_raw) > 1:
+    for idx, linha in df_margens_raw.iloc[1:].iterrows():
+        porte_nome = str(linha.iloc[0]).strip()
+        if porte_nome and porte_nome.lower() != 'nan':
+            pct_str = str(linha.iloc[1]).replace("%", "").replace(",", ".")
             pct_val = pd.to_numeric(pct_str, errors='coerce') or 0.0
             segmentos_opcoes[porte_nome] = float(pct_val) / 100
 else:
@@ -106,7 +109,7 @@ aba_tabela, aba_linha = st.tabs(["🔍 Ver Tabela de Preços", "🛒 Montar Linh
 with aba_tabela:
     st.markdown("### Lista Geral de Equipamentos Cadastrados")
     if df_maq.empty:
-        st.warning("Aguardando preenchimento ou ajuste de dados na planilha 'Maquinas'...")
+        st.warning("Verifique se os dados foram inseridos a partir da linha 2 da planilha...")
     else:
         cat_filtro = st.selectbox("Filtrar por Categoria Comercial:", ["Todas"] + categorias_comerciais)
         df_mostrar = df_maq.copy() if cat_filtro == "Todas" else df_maq[df_maq["Categoria"] == cat_filtro].copy()
@@ -121,7 +124,7 @@ with aba_tabela:
 # --- ABA 2: CONFIGURADOR DE LINHA ---
 with aba_linha:
     if df_maq.empty:
-        st.warning("Verifique os dados da planilha para liberar o configurador.")
+        st.warning("Aguardando carregamento de dados válidos da planilha...")
     else:
         with st.expander("➕ Selecionar Máquina para a Linha", expanded=True):
             col1, col2 = st.columns(2)
