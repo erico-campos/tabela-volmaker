@@ -4,15 +4,15 @@ import pandas as pd
 # Configuração da página para o celular
 st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", layout="centered")
 
-# ID da Planilha Google
+# ID da Planilha Google extraído do seu link real
 SHEET_ID = "1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o"
 
 def carregar_aba(nome_aba, dados_sem_cabecalho=False):
     try:
-        # Formata o link para puxar os dados em formato CSV direto do Google
+        # Link direto oficial para exportação de CSV do Google Sheets
         url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
         
-        # Se a aba não tiver cabeçalho na linha 1, desativamos a leitura automática de colunas
+        # A aba 'Kits' não possui cabeçalho na linha 1, então tratamos diferente
         if dados_sem_cabecalho:
             df = pd.read_csv(url_csv, header=None, dtype=str)
         else:
@@ -27,9 +27,9 @@ def carregar_aba(nome_aba, dados_sem_cabecalho=False):
     except Exception as e:
         return pd.DataFrame()
 
-# Puxando os dados ajustados conforme a estrutura real da planilha
+# Carregando as abas da sua planilha
 df_maq_raw = carregar_aba("Maquinas", dados_sem_cabecalho=False)
-df_kits_raw = carregar_aba("Kits", dados_sem_cabecalho=True)      # Ativado sem cabeçalho conforme o print
+df_kits_raw = carregar_aba("Kits", dados_sem_cabecalho=True)  # Ajustado para ler sem a linha de título
 df_margens_raw = carregar_aba("Margens", dados_sem_cabecalho=False)
 
 def limpar_preco(valor_str):
@@ -53,7 +53,7 @@ if not df_maq_raw.empty and "Equipamento" in df_maq_raw.columns:
 else:
     df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
 
-# Processando Kits (Forçando os nomes das colunas 0 e 1 por falta de cabeçalho na planilha)
+# Processando Kits (mapeando colunas 0 e 1 porque não há cabeçalho escrito na planilha)
 if not df_kits_raw.empty:
     df_kits = pd.DataFrame()
     df_kits["Equipamento"] = df_kits_raw[0] if 0 in df_kits_raw.columns else ""
@@ -101,7 +101,7 @@ aba_tabela, aba_linha = st.tabs(["🔍 Ver Tabela de Preços", "🛒 Montar Linh
 with aba_tabela:
     st.markdown("### Lista Geral de Equipamentos Cadastrados")
     if df_maq.empty:
-        st.warning("Não foi possível carregar os dados. Verifique se a planilha está pública (Leitor).")
+        st.warning("Não foi possível carregar os dados. Verifique se a planilha está pública para 'Qualquer pessoa com o link' como 'Leitor'.")
     else:
         cat_filtro = st.selectbox("Filtrar por Categoria Comercial:", ["Todas"] + categorias_comerciais)
         df_mostrar = df_maq.copy() if cat_filtro == "Todas" else df_maq[df_maq["Categoria"] == cat_filtro].copy()
