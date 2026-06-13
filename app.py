@@ -7,16 +7,11 @@ st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", 
 # ID da Planilha Google extraído do seu link real
 SHEET_ID = "1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o"
 
-def carregar_aba(nome_aba, dados_sem_cabecalho=False):
+def carregar_aba(nome_aba):
     try:
         # Link direto oficial para exportação de CSV do Google Sheets
         url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
-        
-        # A aba 'Kits' não possui cabeçalho na linha 1, então tratamos diferente
-        if dados_sem_cabecalho:
-            df = pd.read_csv(url_csv, header=None, dtype=str)
-        else:
-            df = pd.read_csv(url_csv, dtype=str)
+        df = pd.read_csv(url_csv, dtype=str)
             
         if not df.empty:
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
@@ -27,10 +22,10 @@ def carregar_aba(nome_aba, dados_sem_cabecalho=False):
     except Exception as e:
         return pd.DataFrame()
 
-# Carregando as abas da sua planilha
-df_maq_raw = carregar_aba("Maquinas", dados_sem_cabecalho=False)
-df_kits_raw = carregar_aba("Kits", dados_sem_cabecalho=True)  # Ajustado para ler sem a linha de título
-df_margens_raw = carregar_aba("Margens", dados_sem_cabecalho=False)
+# Carregando as abas da sua planilha (agora todas usam o mesmo padrão com cabeçalho)
+df_maq_raw = carregar_aba("Maquinas")
+df_kits_raw = carregar_aba("Kits")
+df_margens_raw = carregar_aba("Margens")
 
 def limpar_preco(valor_str):
     if pd.isna(valor_str) or str(valor_str).lower() == 'nan' or str(valor_str).strip() == '':
@@ -53,11 +48,11 @@ if not df_maq_raw.empty and "Equipamento" in df_maq_raw.columns:
 else:
     df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
 
-# Processando Kits (mapeando colunas 0 e 1 porque não há cabeçalho escrito na planilha)
-if not df_kits_raw.empty:
+# Processando Kits (agora buscando diretamente pela coluna "Equipamento")
+if not df_kits_raw.empty and "Equipamento" in df_kits_raw.columns:
     df_kits = pd.DataFrame()
-    df_kits["Equipamento"] = df_kits_raw[0] if 0 in df_kits_raw.columns else ""
-    df_kits["Preco"] = df_kits_raw[1].apply(limpar_preco) if 1 in df_kits_raw.columns else 0.0
+    df_kits["Equipamento"] = df_kits_raw["Equipamento"]
+    df_kits["Preco"] = df_kits_raw["Preco"].apply(limpar_preco) if "Preco" in df_kits_raw.columns else 0.0
     df_kits = df_kits[df_kits["Equipamento"] != ""]
 else:
     df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
