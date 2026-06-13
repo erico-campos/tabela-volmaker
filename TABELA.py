@@ -7,42 +7,66 @@ st.set_page_config(page_title="Volmaker - Sistema Comercial", page_icon="🏭", 
 # LINK DA SUA PLANILHA GOOGLE
 LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1W32LRAXpKWTL37-DeZiiSwBRnb0qYoY08slv767yw5o/edit"
 
-# Função otimizada para carregar os dados via CSV direto do Google Drive
-@st.cache_data(ttl=2)  # Atualiza rápido caso você mude valores na planilha
+@st.cache_data(ttl=2)
 def carregar_aba(nome_aba):
     try:
-        # Transforma o link normal em link de exportação de dados
         url_csv = LINK_PLANILHA.split("/edit")[0] + f"/gviz/tq?tqx=out:csv&sheet={nome_aba}"
-        df = pd.read_csv(url_csv)
+        # Força o pandas a ler tudo inicialmente como texto para evitar quebras por símbolos
+        df = pd.read_csv(url_csv, dtype=str)
         if not df.empty:
-            # Limpa colunas em branco criadas acidentalmente
+            # Remove colunas vazias geradas por linhas fantasmas na planilha
             df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+            # Limpa espaços em branco no início/fim dos textos e nomes de colunas
+            df.columns = df.columns.str.strip()
+            for col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
         return df
     except Exception as e:
         return pd.DataFrame()
 
 # --- CARREGAMENTO DOS DADOS ---
-df_maq = carregar_aba("Maquinas")
-df_kits = carregar_aba("Kits")
-df_margens = carregar_aba("Margens")
+df_maq_raw = carregar_aba("Maquinas")
+df_kits_raw = carregar_aba("Kits")
+df_margens_raw = carregar_aba("Margens")
 
-# --- TRATAMENTO E VALIDAÇÃO ---
-if not df_maq.empty and "Preco" in df_maq.columns:
-    df_maq["Preco"] = pd.to_numeric(df_maq["Preco"].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
+# --- FUNÇÃO AUXILIAR PARA LIMPAR PREÇOS ---
+def limpar_preco_vader(valor_str):
+    if pd.isna(valor_str) or valor_str == 'nan' or valor_str == '':
+        return 0.0
+    # Remove símbolos de moeda, pontos de milhar e substitui a vírgula decimal por ponto
+    limpo = valor_str.replace("R$", "").replace("r$", "").replace(" ", "")
+    # Se o número estiver no formato brasileiro (ex: 131.450,00 ou 131450,00)
+    if "," in limpo:
+        limpo = limpo.replace(".", "").replace(",", ".")
+    return pd.to_numeric(limpo, errors='coerce') or 0.0
+
+# --- TRATAMENTO E ESTRUTURAÇÃO DOS DATAFRAMES ---
+if not df_maq_raw.empty and "Equipamento" in df_maq_raw.columns and "Preco" in df_maq_raw.columns:
+    df_maq = pd.DataFrame({
+        "Categoria": df_maq_raw["Categoria"] if "Categoria" in df_maq_raw.columns else "Geral",
+        "Equipamento": df_maq_raw["Equipamento"],
+        "Preco": df_maq_raw["Preco"].apply(limpar_preco_vader)
+    })
 else:
     df_maq = pd.DataFrame(columns=["Categoria", "Equipamento", "Preco"])
 
-if not df_kits.empty and "Preco" in df_kits.columns:
-    df_kits["Preco"] = pd.to_numeric(df_kits["Preco"].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0.0)
+if not df_kits_raw.empty and "Equipamento" in df_kits_raw.columns and "Preco" in df_kits_raw.columns:
+    df_kits = pd.DataFrame({
+        "Equipamento": df_kits_raw["Equipamento"],
+        "Preco": df_kits_raw["Preco"].apply(limpar_preco_vader)
+    })
 else:
     df_kits = pd.DataFrame(columns=["Equipamento", "Preco"])
 
-# Tratamento da aba de margens
-if not df_margens.empty and "Porcentagem" in df_margens.columns and "Porte" in df_margens.columns:
-    df_margens["Porcentagem"] = pd.to_numeric(df_margens["Porcentagem"], errors='coerce').fillna(0.0)
-    segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
-    for _, linha in df_margens.iterrows():
-        segmentos_opcoes[str(linha["Porte"])] = float(linha["Porcentagem"]) / 100
+# Configuração das margens baseado na planilha
+segmentos_opcoes = {"Padrão de Fábrica (sem acrescentar porcentagem)": 0.0}
+if not df_margens_raw.empty and "Porte" in df_margens_raw.columns and "Porcentagem" in df_margens_raw.columns:
+    for _, linha in df_margens_raw.iterrows():
+        porte_nome = str(linha["Porte"])
+        if porte_nome and porte_nome != 'nan':
+            pct_str = str(linha["Porcentagem"]).replace("%", "").replace(",", ".")
+            pct_val = pd.to_numeric(pct_str, errors='coerce') or 0.0
+            segmentos_opcoes[porte_nome] = float(pct_val) / 100
 else:
     segmentos_opcoes = {
         "Padrão de Fábrica (sem acrescentar porcentagem)": 0.0,
@@ -82,7 +106,7 @@ aba_tabela, aba_linha = st.tabs(["🔍 Ver Tabela de Preços", "🛒 Montar Linh
 with aba_tabela:
     st.markdown("### Lista Geral de Equipamentos Cadastrados")
     if df_maq.empty:
-        st.warning("Aguardando liberação do link da planilha no Google Drive...")
+        st.warning("Aguardando preenchimento ou ajuste de dados na planilha 'Maquinas'...")
     else:
         cat_filtro = st.selectbox("Filtrar por Categoria Comercial:", ["Todas"] + categorias_comerciais)
         df_mostrar = df_maq.copy() if cat_filtro == "Todas" else df_maq[df_maq["Categoria"] == cat_filtro].copy()
@@ -97,14 +121,14 @@ with aba_tabela:
 # --- ABA 2: CONFIGURADOR DE LINHA ---
 with aba_linha:
     if df_maq.empty:
-        st.warning("Aguardando liberação do link da planilha no Google Drive...")
+        st.warning("Verifique os dados da planilha para liberar o configurador.")
     else:
         with st.expander("➕ Selecionar Máquina para a Linha", expanded=True):
             col1, col2 = st.columns(2)
             with col1:
                 cat_sel = st.selectbox("Categoria da Máquina:", categorias_comerciais, key="cat_linha")
             with col2:
-                modelos_filtrados = df_maq[df_maq["Categoria"] == cat_sel]["Equipamento"].tolist() if not df_maq.empty else []
+                modelos_filtrados = df_maq[df_maq["Categoria"] == cat_sel]["Equipamento"].tolist()
                 mod_sel = st.selectbox("Modelo da Máquina:", modelos_filtrados if modelos_filtrados else ["Nenhuma máquina nesta categoria"], key="mod_linha")
             
             if st.button("Adicionar Máquina à Composição"):
@@ -155,3 +179,4 @@ with aba_linha:
                 c1.metric("Subtotal Puro", formatar_real(subtotal_puro))
                 c2.metric(f"Adicional Porte ({int(porcentagem*100)}%)", formatar_real(valor_segmento))
                 c3.metric("Valor Sugerido Final", formatar_real(total_final))
+                
