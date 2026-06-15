@@ -99,10 +99,10 @@ else:
 # --- TRATAMENTO MARGENS ---
 segmentos_opcoes = {
     "Padrão": 0.0,
-    "Pequena Empresa": 0.10,
-    "Média Empresa": 0.40,
-    "Grande Empresa": 0.80,
-    "Multinacional": 1.50
+    "Pequena Empresa": 0.0,
+    "Média Empresa": 0.20,
+    "Grande Empresa": 0.50,
+    "Multinacional": 1.00
 }
 
 if not df_margens_raw.empty:
@@ -232,4 +232,3 @@ with aba_linha:
                 c1.metric("Subtotal Puro", formatar_real(subtotal_puro))
                 c2.metric(f"Adicional Porte", formatar_real(valor_segmento))
                 c3.metric("Valor Sugerido Final", formatar_real(total_final))
-
